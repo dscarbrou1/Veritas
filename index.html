@@ -29,6 +29,188 @@ const MAX_HISTORY = 10;
 let db;
 let auth;
 
+// --- UTILITY/HOOKS (Defined outside App for single declaration) ---
+
+const getPartofSpeechColor = (partOfSpeech) => {
+    switch (partOfSpeech.toLowerCase()) {
+        case 'noun': return 'bg-indigo-100 text-indigo-700';
+        case 'verb': return 'bg-green-100 text-green-700';
+        case 'adjective': return 'bg-yellow-100 text-yellow-700';
+        case 'adverb': return 'bg-pink-100 text-pink-700';
+        default: return 'bg-gray-100 text-gray-700';
+    }
+};
+
+const cleanAndParseJson = (jsonText) => {
+    let cleanedText = jsonText.trim();
+    cleanedText = cleanedText.replace(/```(json)?/g, '').trim();
+    try {
+        return JSON.parse(cleanedText);
+    } catch (e) {
+        console.error("Failed to parse cleaned JSON:", e);
+        return null;
+    }
+};
+
+
+// --- COMPONENT DEFINITIONS ---
+
+// Pronunciation Tester Component
+const PronunciationTester = ({ correctWord }) => {
+    const [isListening, setIsListening] = useState(false);
+    const [result, setResult] = useState(null); // 'success', 'fail', or null
+    const recognition = useRef(null);
+
+    // Check for browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    useEffect(() => {
+        if (SpeechRecognition) {
+            recognition.current = new SpeechRecognition();
+            recognition.current.continuous = false;
+            recognition.current.lang = 'en-US';
+            recognition.current.interimResults = false;
+            recognition.current.maxAlternatives = 1;
+
+            recognition.current.onresult = (event) => {
+                const spokenWord = event.results[0][0].transcript.toLowerCase().trim();
+                const cleanCorrectWord = correctWord.toLowerCase().trim();
+
+                if (spokenWord === cleanCorrectWord) {
+                    setResult('success');
+                } else {
+                    setResult('fail');
+                }
+                setIsListening(false);
+            };
+
+            recognition.current.onerror = (event) => {
+                console.error("Speech Recognition Error:", event.error);
+                setResult('error');
+                setIsListening(false);
+            };
+
+            recognition.current.onend = () => {
+                // Only set listening to false if we didn't get a result, or if we weren't cancelled
+                if (isListening && result === null) {
+                    setIsListening(false);
+                }
+            };
+        }
+        return () => {
+            if (recognition.current) {
+                recognition.current.stop();
+            }
+        };
+    }, [correctWord, isListening, SpeechRecognition]);
+
+    const startListening = () => {
+        if (!SpeechRecognition) {
+            setResult('unsupported');
+            return;
+        }
+        setResult(null);
+        setIsListening(true);
+        recognition.current.start();
+    };
+
+    const buttonStyle = isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-500 hover:bg-indigo-600';
+    
+    let resultMessage = null;
+    if (result === 'success') {
+        resultMessage = <span className="text-green-600 font-semibold flex items-center mt-2">
+            <svg className="h-5 w-5 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+            Pronunciation Perfect!
+        </span>;
+    } else if (result === 'fail') {
+        resultMessage = <span className="text-red-500 font-semibold flex items-center mt-2">
+            <svg className="h-5 w-5 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
+            Try Again.
+        </span>;
+    } else if (result === 'error' || result === 'unsupported') {
+            resultMessage = <span className="text-yellow-600 font-semibold flex items-center mt-2">Microphone/Speech API Error.</span>;
+    }
+
+    return (
+        <div className="p-4 mt-6 bg-gray-50 rounded-lg border border-gray-200 flex items-center justify-between">
+            <div>
+                <button 
+                    onClick={startListening}
+                    className={`text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-150 ${buttonStyle}`}
+                    disabled={isListening}
+                >
+                    {isListening ? 'Listening...' : 'Test Pronunciation'}
+                </button>
+                {resultMessage}
+            </div>
+            <div className="text-sm text-gray-500 italic">
+                {result === 'unsupported' && "Speech Recognition is not supported by your browser."}
+            </div>
+        </div>
+    );
+};
+
+// AI Examples Component (Handles its own loading and API call)
+const AiExamples = React.memo(({ word, definition }) => {
+    const [examples, setExamples] = useState(null);
+
+    // Call API only when word/definition changes
+    useEffect(() => {
+        const fetchExamples = async () => {
+            const systemPrompt = `You are a helpful linguistic assistant. Analyze the provided word and definition. Generate exactly two unique, clear, and modern example sentences using the word. The examples must not contain the word's definition. Output ONLY the two sentences, separated by a newline character.`;
+            const userQuery = `Word: ${word}. Definition: ${definition}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                config: { temperature: 0.7 }
+            };
+
+            try {
+                const response = await fetch(GEMINI_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "AI analysis failed.";
+                setExamples(text.split('\n').filter(s => s.trim().length > 0));
+
+            } catch (e) {
+                console.error("Gemini API call failed:", e);
+                setExamples(["AI Examples: Error generating content."]);
+            }
+        };
+        fetchExamples();
+    }, [word, definition]);
+
+    if (!examples) return (
+        <div className="p-4 mt-8 bg-blue-50 rounded-lg border border-blue-200">
+            <h3 className="text-lg font-bold text-blue-700 mb-2 flex items-center">AI Contextual Examples</h3>
+            <div className="text-sm text-gray-500 italic flex items-center">
+                <svg className="animate-spin h-4 w-4 mr-1 text-blue-500" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Generating custom examples...
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="p-4 mt-8 bg-blue-50 rounded-lg border border-blue-200">
+            <h3 className="text-lg font-bold text-blue-700 mb-2 flex items-center">AI Contextual Examples</h3>
+            <ul className="list-disc list-inside space-y-1 ml-4 text-gray-600">
+                {examples.map((ex, index) => (
+                    <li key={index} className="text-base">{ex}</li>
+                ))}
+            </ul>
+        </div>
+    );
+});
+
+
 // Component to handle the entire application logic and rendering
 const App = () => {
     // --- STATE MANAGEMENT ---
@@ -37,7 +219,6 @@ const App = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [aiEnabled, setAiEnabled] = useState(true);
-    const [aiLoading, setAiLoading] = useState(false);
     
     // Firestore State
     const [userId, setUserId] = useState(null);
@@ -155,68 +336,6 @@ const App = () => {
         localStorage.setItem('wordHistory', JSON.stringify(newHistory));
     }, [history]);
 
-    const getPartofSpeechColor = (partOfSpeech) => {
-        switch (partOfSpeech.toLowerCase()) {
-            case 'noun': return 'bg-indigo-100 text-indigo-700';
-            case 'verb': return 'bg-green-100 text-green-700';
-            case 'adjective': return 'bg-yellow-100 text-yellow-700';
-            case 'adverb': return 'bg-pink-100 text-pink-700';
-            default: return 'bg-gray-100 text-gray-700';
-        }
-    };
-
-    const playAudio = (audioUrl) => {
-        if (!audioUrl) {
-            setError("Audio unavailable for this word.");
-            return;
-        }
-        
-        const audio = new Audio(audioUrl);
-        audio.play().catch(e => {
-            console.error("Audio playback failed:", e);
-            setError("Pronunciation audio failed to play.");
-        });
-    };
-
-    // --- GEMINI API CALL: AI Examples ---
-
-    const generateAiExamples = useCallback(async (word, definition) => {
-        if (!aiEnabled) return ["AI Examples: Feature is currently disabled."];
-        if (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
-             console.warn("AI Insight disabled: Gemini API Key not set.");
-             return ["AI Examples: Key not configured. Please add your key."];
-        }
-        
-        setAiLoading(true);
-        const systemPrompt = `You are a helpful linguistic assistant. Analyze the provided word and definition. Generate exactly two unique, clear, and modern example sentences using the word. The examples must not contain the word's definition. Output ONLY the two sentences, separated by a newline character.`;
-        const userQuery = `Word: ${word}. Definition: ${definition}`;
-        
-        const payload = {
-            contents: [{ parts: [{ text: userQuery }] }],
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            config: { temperature: 0.7 }
-        };
-
-        try {
-            const response = await fetch(GEMINI_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const result = await response.json();
-            const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "AI analysis failed.";
-            return text.split('\n').filter(s => s.trim().length > 0);
-
-        } catch (e) {
-            console.error("Gemini API call failed:", e);
-            return ["AI Examples: Error generating content."];
-        } finally {
-            setAiLoading(false);
-        }
-    }, [aiEnabled]);
-
-
     // --- SEARCH LOGIC ---
 
     const performSearch = useCallback(async (word) => {
@@ -284,10 +403,10 @@ const App = () => {
         localStorage.removeItem('wordHistory');
         setHistory([]);
     };
-    
+
     // --- RENDERING COMPONENTS ---
 
-    const AiToggle = (
+    const AiToggleComponent = (
         <div className="flex p-1 bg-gray-200 rounded-lg shadow-inner items-center">
             <button 
                 onClick={() => handleAiToggle(true)}
@@ -305,7 +424,7 @@ const App = () => {
             </button>
             {settingsLoading && (
                 <div className="ml-2 text-xs text-gray-500 flex items-center">
-                    <svg className="animate-spin h-3 w-3 mr-1 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-3 w-3 mr-1 text-gray-500" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
@@ -316,7 +435,7 @@ const App = () => {
     );
     
     // Dropdown (History/Suggestions)
-    const Dropdown = () => {
+    const DropdownComponent = () => {
         let items = [];
         let title = "Recent Searches";
         
@@ -362,7 +481,7 @@ const App = () => {
     };
     
     // Main Content Renderer
-    const MeaningSection = ({ data }) => {
+    const MeaningSectionComponent = ({ data }) => {
         const firstEntry = data[0];
         
         // Find best audio link and phonetic text
@@ -392,8 +511,12 @@ const App = () => {
             <div id="wordCard">
                 <h2 className="text-4xl font-bold text-gray-900 mb-2">{firstEntry.word}</h2>
                 
+                {/* Pronunciation Test Section */}
+                {isAuthReady && <PronunciationTester correctWord={firstEntry.word} />}
+
+
                 {/* Phonetics and Audio */}
-                <div className="flex items-center space-x-3 mb-6 text-gray-600">
+                <div className="flex items-center space-x-3 mt-6 mb-6 text-gray-600">
                     <span className="text-lg italic">{phonetic}</span>
                     <button 
                         onClick={() => playAudio(audioUrl)}
@@ -519,7 +642,7 @@ const App = () => {
             <div className="p-4 mt-8 bg-blue-50 rounded-lg border border-blue-200">
                 <h3 className="text-lg font-bold text-blue-700 mb-2 flex items-center">AI Contextual Examples</h3>
                 <div className="text-sm text-gray-500 italic flex items-center">
-                    <svg className="animate-spin h-4 w-4 mr-1 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-4 w-4 mr-1 text-blue-500" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -562,7 +685,7 @@ const App = () => {
                         placeholder="Search for a word..."
                     />
                     <div className="absolute z-10 w-full" style={{ top: '100%', left: 0 }}>
-                        <Dropdown />
+                        <DropdownComponent />
                     </div>
                 </div>
                 
@@ -572,7 +695,7 @@ const App = () => {
                     disabled={loading}
                 >
                     {loading ? (
-                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-5 w-5 text-white" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -593,7 +716,7 @@ const App = () => {
 
             {/* AI Toggle and Message Area */}
             <div className="flex justify-between items-center mb-6">
-                {AiToggle}
+                {AiToggleComponent}
                 {error && <div className="text-sm text-red-500 font-medium">{error}</div>}
             </div>
 
@@ -619,7 +742,7 @@ const App = () => {
                 )}
 
                 {/* Word Definition Card (Main Content) */}
-                {wordData && <MeaningSection data={wordData} />}
+                {wordData && <MeaningSectionComponent data={wordData} />}
             </div>
             
             {/* Footer/Source */}
@@ -631,5 +754,7 @@ const App = () => {
 };
 
 export default App;
+
+
 
 
