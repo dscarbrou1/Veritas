@@ -122,6 +122,34 @@
         <div id="messageArea" class="text-sm text-red-500 font-medium hidden"></div>
     </div>
 
+    <!-- Translation Input and Output (NEW SECTION) -->
+    <div id="translationContainer" class="p-4 mb-6 bg-yellow-50 rounded-lg border border-yellow-200">
+        <h3 class="text-lg font-bold text-yellow-800 mb-2 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2a1 1 0 102 0V7zm0 4a1 1 0 10-2 0v2a1 1 0 102 0v-2z" clip-rule="evenodd" />
+            </svg>
+            Instant Translation
+        </h3>
+        <div class="flex flex-wrap gap-3 items-center">
+            <select id="languageSelect" class="p-2 border border-gray-300 rounded-lg text-sm flex-grow shadow-inner">
+                <option value="Spanish">Spanish</option>
+                <option value="French">French</option>
+                <option value="German">German</option>
+                <option value="Mandarin Chinese">Mandarin Chinese</option>
+            </select>
+            <button id="translateButton" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 transform hover:scale-105 active:scale-95 text-sm">
+                Translate
+            </button>
+        </div>
+        <div id="translationResult" class="mt-3 text-gray-700 text-base italic hidden">
+            <!-- Translation result injected here -->
+        </div>
+        <div id="translationLoading" class="mt-3 text-sm text-gray-500 italic hidden">
+            Translating...
+        </div>
+    </div>
+    <!-- END Translation Section -->
+
     <!-- Results Display Area -->
     <div id="resultsArea">
         <div id="welcomeMessage" class="text-center p-8 border border-gray-200 rounded-xl">
@@ -207,6 +235,7 @@
     let isAiEnabled = localStorage.getItem('aiEnabled') !== null ? (localStorage.getItem('aiEnabled') === 'true') : true;
     let audioInstance = null; // Stores the current Audio object
     let historyTimeout = null; // For the history blur timeout
+    let lastSearchedWord = ""; // Stores the last successfully searched word
 
     // --- DOM ELEMENTS ---
     const wordInput = document.getElementById('wordInput');
@@ -225,6 +254,10 @@
     const etymologyText = document.getElementById('etymologyText');
     const formsCard = document.getElementById('formsCard');
     const formsList = document.getElementById('formsList');
+    const translateButton = document.getElementById('translateButton');
+    const languageSelect = document.getElementById('languageSelect');
+    const translationResult = document.getElementById('translationResult');
+    const translationLoading = document.getElementById('translationLoading');
 
     // AI Toggle Elements
     const aiOnBtn = document.getElementById('aiOnBtn');
@@ -261,6 +294,7 @@
         noResults.classList.add('hidden');
         wordCard.classList.add('hidden');
         historyDisplay.classList.add('hidden');
+        translationResult.classList.add('hidden'); // Hide translation on new search
         wordInput.classList.remove('focus:ring-red-500', 'focus:border-red-500');
         wordInput.classList.add('focus:ring-blue-500', 'focus:border-blue-500');
     }
@@ -363,6 +397,73 @@
         }
     }
 
+    // --- GEMINI API CALL (Instant Translation) ---
+    async function performTranslation() {
+        const word = lastSearchedWord;
+        const targetLanguage = languageSelect.value;
+        
+        if (!word) {
+            translationResult.textContent = "Please search for a word first.";
+            translationResult.classList.remove('hidden');
+            return;
+        }
+
+        if (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
+             translationResult.textContent = "Translation disabled: Gemini API Key not configured.";
+             translationResult.classList.remove('hidden');
+             return;
+        }
+
+        translationLoading.classList.remove('hidden');
+        translationResult.classList.add('hidden');
+        
+        const systemPrompt = `You are a professional translator. Translate the given English word into ${targetLanguage}. Provide the result in a clean JSON format. The phonetic spelling is optional, but if provided, it should be simple.`;
+        const userQuery = `Translate the English word: "${word}".`;
+        
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "OBJECT",
+                    properties: {
+                        "translatedWord": { "type": "STRING", description: "The word translated into the target language." },
+                        "phonetic": { "type": "STRING", description: "A simple phonetic spelling of the translated word, if possible." }
+                    }
+                }
+            }
+        };
+
+        try {
+            const apiUrl = GEMINI_API_URL;
+            let response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            
+            if (jsonText) {
+                const translationData = JSON.parse(jsonText);
+                const translatedWord = translationData.translatedWord || "Translation unavailable";
+                const phonetic = translationData.phonetic ? ` (${translationData.phonetic})` : '';
+                translationResult.textContent = `Result in ${targetLanguage}: ${translatedWord}${phonetic}`;
+            } else {
+                translationResult.textContent = `Translation failed: Could not parse response.`;
+            }
+
+        } catch (error) {
+            console.error("Translation API call failed:", error);
+            translationResult.textContent = `Translation failed: Network or parsing error.`;
+        } finally {
+            translationLoading.classList.add('hidden');
+            translationResult.classList.remove('hidden');
+        }
+    }
+
 
     // --- DISPLAY FUNCTIONS ---
 
@@ -411,6 +512,7 @@
 
     async function displayWordData(data) {
         const word = data[0].word;
+        lastSearchedWord = word; // Store the word for translation
         
         hideAllCards();
         saveToHistory(word);
@@ -635,6 +737,10 @@
     aiOnBtn.onclick = () => { isAiEnabled = true; updateAiToggle(); };
     aiOffBtn.onclick = () => { isAiEnabled = false; updateAiToggle(); };
 
+    // Translation Logic
+    translateButton.onclick = performTranslation;
+
+
     // Initialization
     window.onload = () => {
         // Initial setup for AI toggle state
@@ -677,4 +783,6 @@
 
 </body>
 </html>
+
+
 
