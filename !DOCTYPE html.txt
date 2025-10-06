@@ -238,8 +238,14 @@
     clearHistoryBtn.textContent = "Clear";
     clearHistoryBtn.id = "clearHistoryBtn";
     historyHeader.className = "flex justify-between items-center p-2 border-b text-gray-500 text-xs font-semibold";
-    historyHeader.innerHTML = '<span>Recent Searches</span>';
+    historyHeader.innerHTML = '<span id="dropdownTitle">Recent Searches</span>';
     historyHeader.appendChild(clearHistoryBtn);
+    
+    const listContainer = document.createElement('div');
+    listContainer.id = "dropdownList";
+    historyDisplay.appendChild(historyHeader);
+    historyDisplay.appendChild(listContainer);
+
 
     // --- UTILITY FUNCTIONS ---
 
@@ -361,11 +367,7 @@
     // --- DISPLAY FUNCTIONS ---
 
     function renderSearchDropdown(query) {
-        historyDisplay.innerHTML = '';
-        historyDisplay.appendChild(historyHeader);
-        const listContainer = document.createElement('div');
-        listContainer.id = "dropdownList";
-        historyDisplay.appendChild(listContainer);
+        listContainer.innerHTML = ''; // Clear previous items
         
         let items = [];
         let title = "Recent Searches";
@@ -373,7 +375,8 @@
         if (query.length > 0) {
             // Fuzzy search logic (case-insensitive and partial match)
             const lowerQuery = query.toLowerCase();
-            items = CITY_LIST.filter(word => 
+            // Using the RANDOM_WORDS list for suggestions as a proxy for a city list
+            items = RANDOM_WORDS.filter(word => 
                 word.toLowerCase().includes(lowerQuery)
             ).slice(0, 10);
             title = "Suggestions";
@@ -424,7 +427,8 @@
                 const phoneticEntry = entry.phonetics.find(p => p.audio && p.audio.length > 0) || entry.phonetics[0];
                 if (phoneticEntry) {
                     phonetic = phoneticEntry.text || phonetic;
-                    audioUrl = phoneticEntry.audio || audioUrl;
+                    // Fix for common API audio link format issue
+                    audioUrl = phoneticEntry.audio.startsWith('//') ? 'https:' + phoneticEntry.audio : phoneticEntry.audio;
                     break;
                 }
             }
@@ -443,6 +447,7 @@
         }
 
         // --- 3. Word Forms / Inflections ---
+        // Word forms are often found in the definition's synonyms/antonyms as a secondary entry.
         const forms = data.map(d => d.word || d.phonetic).flat().filter((v, i, a) => a.indexOf(v) === i && v !== word);
         if (forms.length > 0) {
             formsList.innerHTML = forms.map(form => `<span class="word-form-tag">${form}</span>`).join('');
@@ -472,20 +477,23 @@
                 
                 // Definitions
                 html += `<ul class="list-disc list-inside space-y-2 mb-4 ml-4 text-gray-700">`;
-                meaning.definitions.slice(0, 3).forEach((def, index) => {
-                    html += `<li class="text-base">
-                                <span class="font-medium text-gray-800">${def.definition}</span>`;
-                    if (def.example) {
-                        html += `<p class="text-sm italic text-gray-500 mt-1">Example: "${def.example}"</p>`;
-                    }
-                    html += `</li>`;
-                    
-                    // Capture the first definition for AI analysis
-                    if (isFirstMeaning && index === 0) {
-                        firstMeaningDefinition = def.definition;
-                        isFirstMeaning = false;
-                    }
-                });
+                // Use strict conditional check for definitions array
+                if (meaning.definitions && Array.isArray(meaning.definitions)) {
+                    meaning.definitions.slice(0, 3).forEach((def, index) => {
+                        html += `<li class="text-base">
+                                    <span class="font-medium text-gray-800">${def.definition}</span>`;
+                        if (def.example) {
+                            html += `<p class="text-sm italic text-gray-500 mt-1">Example: "${def.example}"</p>`;
+                        }
+                        html += `</li>`;
+                        
+                        // Capture the first definition for AI analysis
+                        if (isFirstMeaning && index === 0) {
+                            firstMeaningDefinition = def.definition;
+                            isFirstMeaning = false;
+                        }
+                    });
+                }
                 html += `</ul>`;
                 
                 // Synonyms and Antonyms
@@ -494,6 +502,7 @@
 
                 if (synonyms.length > 0) {
                     html += `<div class="mt-4"><p class="text-sm font-semibold text-gray-700">Synonyms:</p><div class="scroll-list flex flex-wrap gap-2 pt-1">`;
+                    // Clickable links for synonyms/antonyms
                     html += synonyms.map(w => `<a href="#" class="text-blue-500 hover:text-blue-700 text-sm font-medium transition underline" onmousedown="performSearch('${w.replace(/'/g, "\\'")}', event)">${w}</a>`).join(', ');
                     html += `</div></div>`;
                 }
@@ -552,16 +561,19 @@
         try {
             const response = await fetch(`${DICTIONARY_API_URL}${searchTerm}`);
             
-            if (response.status === 404) {
-                showNoResults();
-                return;
-            }
+            // Check for API failure/rate limiting
             if (!response.ok) {
+                // Check if 404 (Not Found)
+                if (response.status === 404) {
+                    showNoResults();
+                    return;
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
             const data = await response.json();
             
+            // Crucial check to ensure data is an array and not an error object
             if (Array.isArray(data) && data.length > 0) {
                 await displayWordData(data);
             } else {
