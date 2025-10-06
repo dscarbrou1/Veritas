@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordScope Dictionary</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb; /* Very light, professional background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        /* Style for the active AI toggle button */
+        .toggle-active {
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.5);
+        }
+        /* Style for the inactive AI toggle button */
+        .toggle-inactive {
+            background-color: #e5e7eb; /* gray-200 */
+            color: #4b5563; /* gray-600 */
+        }
+        /* Part of Speech Highlighting */
+        .part-of-speech {
+            display: inline-block;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 0.2rem 0.5rem;
+            margin-right: 1rem;
+            border-radius: 9999px; /* full rounded */
+            text-transform: uppercase;
+        }
+        /* Word Families/Forms List */
+        .word-form-tag {
+            background-color: #f3f4f6; /* light gray */
+            color: #4b5563; /* gray-600 */
+            font-size: 0.85rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.5rem;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+            display: inline-block;
+        }
+        /* Scrollable Synonym/Antonym lists */
+        .scroll-list {
+            max-height: 120px;
+            overflow-y: auto;
+            white-space: normal;
+        }
+        /* Audio pulse effect */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .audio-pulse {
+            animation: pulse 0.3s ease-in-out;
+        }
+        /* Hide history display by default */
+        #historyDisplay {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+    
+    <!-- Header -->
+    <header class="text-center mb-6">
+        <h1 class="text-3xl font-extrabold text-gray-800">WordScope</h1>
+        <p class="text-sm text-gray-500">Your comprehensive digital lexicon.</p>
+    </header>
+
+    <!-- Search Input and Controls -->
+    <div class="flex flex-wrap gap-3 mb-4">
+        <div class="flex-grow relative">
+            <input type="text" id="wordInput" placeholder="Search for a word..." 
+                   class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-inner">
+            <!-- Search History/Suggestion Dropdown Container -->
+            <div id="historyContainer" class="relative">
+                <div id="historyDisplay" 
+                    class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto" 
+                    style="top: 0px;">
+                    <!-- Content will dynamically switch between History and Suggestions -->
+                </div>
+            </div>
+        </div>
+        
+        <button id="searchButton" 
+                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-150 transform hover:scale-105 active:scale-95">
+            Search
+        </button>
+
+        <button id="randomButton" 
+                class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-150 transform hover:scale-105 active:scale-95 flex items-center justify-center"
+                title="Random Word">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 2.5a7.5 7.5 0 100 15 7.5 7.5 0 000-15zM8.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4a1 1 0 00-1.414-1.414L10 10.586l-1.293-1.293z" clip-rule="evenodd" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- AI Toggle and Message Area -->
+    <div class="flex justify-between items-center mb-6">
+        <div id="aiToggle" class="flex p-1 bg-gray-200 rounded-lg shadow-inner">
+            <button id="aiOnBtn" class="px-3 py-1 rounded-md text-sm font-bold transition">AI Examples ON</button>
+            <button id="aiOffBtn" class="px-3 py-1 rounded-md text-sm font-bold transition">AI Examples OFF</button>
+        </div>
+        <div id="messageArea" class="text-sm text-red-500 font-medium hidden"></div>
+    </div>
+
+    <!-- Results Display Area -->
+    <div id="resultsArea">
+        <div id="welcomeMessage" class="text-center p-8 border border-gray-200 rounded-xl">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Start Exploring Vocabulary!</h2>
+            <p class="text-gray-600">Type a word above or click the shuffle button to begin your search.</p>
+        </div>
+
+        <!-- Word Not Found State -->
+        <div id="noResults" class="hidden text-center p-8 border-4 border-dashed border-red-200 bg-red-50 rounded-xl">
+            <h2 class="text-2xl font-bold text-red-700 mb-3">Word Not Found</h2>
+            <p class="text-gray-600 mb-4">We couldn't find a definition for that word. Please check your spelling.</p>
+            <button onclick="document.getElementById('randomButton').click()" 
+                    class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition shadow-md">
+                Try a Random Word
+            </button>
+        </div>
+
+        <!-- Word Definition Card (Main Content) -->
+        <div id="wordCard" class="hidden">
+            <h2 id="wordTitle" class="text-4xl font-bold text-gray-900 mb-2"></h2>
+            <div class="flex items-center space-x-3 mb-6 text-gray-600">
+                <span id="phoneticText" class="text-lg italic"></span>
+                <button id="audioButton" class="text-blue-500 hover:text-blue-700 transition transform hover:scale-110" title="Listen to pronunciation">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9.383 3.064A1 1 0 0110 3v14a1 1 0 01-.617.936l-3.5 1.5a1 1 0 01-1.383-.936V2.5a1 1 0 01.936-.936l3.5 1.5zM15 8.5a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zm-4 0a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Etymology Card -->
+            <div id="etymologyCard" class="p-4 mb-6 bg-gray-50 rounded-lg border border-gray-200 hidden">
+                <h3 class="text-lg font-bold text-gray-700 mb-2 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2.586l.293.293a1 1 0 001.414 0l7-7a1 1 0 000-1.414l-7-7z" />
+                    </svg>
+                    Word Origin (Etymology)
+                </h3>
+                <p id="etymologyText" class="text-sm text-gray-600 italic"></p>
+            </div>
+
+            <!-- Meanings Section -->
+            <div id="meaningsContainer" class="space-y-8">
+                <!-- Definitions will be injected here -->
+            </div>
+
+             <!-- Word Forms / Inflections Card -->
+            <div id="formsCard" class="p-4 mt-8 bg-indigo-50 rounded-lg border border-indigo-200 hidden">
+                <h3 class="text-lg font-bold text-indigo-700 mb-3 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7z" />
+                        <path fill-rule="evenodd" d="M18 6a2 2 0 012 2v10a2 2 0 01-2 2H2a2 2 0 01-2-2V8a2 2 0 012-2h1.586a1 1 0 01.707.293L6 8.586V13a1 1 0 001 1h6a1 1 0 001-1V8.586l1.707-1.707a1 1 0 01.707-.293H18zm-5 6H7v-4h6v4z" clip-rule="evenodd" />
+                    </svg>
+                    Word Forms / Inflections
+                </h3>
+                <div id="formsList" class="flex flex-wrap gap-2">
+                    <!-- Word forms injected here -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <!-- Footer/Source -->
+    <footer class="mt-8 text-center text-xs text-gray-400 border-t pt-4">
+        Data provided by the Free Dictionary API. AI content generated by Google Gemini.
+    </footer>
+</div>
+
+<script>
+    // --- API CONFIGURATION AND STATE ---
+    const DICTIONARY_API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/";
+    const MAX_HISTORY = 10;
+    const RANDOM_WORDS = [
+        "ubiquitous", "ephemeral", "serendipity", "mellifluous", "quixotic",
+        "cacophony", "epiphany", "eloquence", "incongruous", "plethora",
+        "juxtaposition", "voracious", "equivocate", "nebulous", "resilience",
+        "sycophant", "taciturn", "veracity", "zephyr"
+    ];
+    // Gemini API Key Placeholder
+    const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"; // Placeholder: User must update this!
+    const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=" + GEMINI_API_KEY;
+
+    let isAiEnabled = localStorage.getItem('aiEnabled') !== null ? (localStorage.getItem('aiEnabled') === 'true') : true;
+    let audioInstance = null; // Stores the current Audio object
+    let historyTimeout = null; // For the history blur timeout
+
+    // --- DOM ELEMENTS ---
+    const wordInput = document.getElementById('wordInput');
+    const searchButton = document.getElementById('searchButton');
+    const randomButton = document.getElementById('randomButton');
+    const resultsArea = document.getElementById('resultsArea');
+    const messageArea = document.getElementById('messageArea');
+    const welcomeMessage = document.getElementById('welcomeMessage');
+    const noResults = document.getElementById('noResults');
+    const wordCard = document.getElementById('wordCard');
+    const wordTitle = document.getElementById('wordTitle');
+    const phoneticText = document.getElementById('phoneticText');
+    const audioButton = document.getElementById('audioButton');
+    const meaningsContainer = document.getElementById('meaningsContainer');
+    const etymologyCard = document.getElementById('etymologyCard');
+    const etymologyText = document.getElementById('etymologyText');
+    const formsCard = document.getElementById('formsCard');
+    const formsList = document.getElementById('formsList');
+
+    // AI Toggle Elements
+    const aiOnBtn = document.getElementById('aiOnBtn');
+    const aiOffBtn = document.getElementById('aiOffBtn');
+
+    // History Elements
+    const historyDisplay = document.getElementById('historyDisplay');
+    const historyHeader = document.createElement('div');
+    const clearHistoryBtn = document.createElement('button');
+    clearHistoryBtn.className = "text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded transition duration-150";
+    clearHistoryBtn.textContent = "Clear";
+    clearHistoryBtn.id = "clearHistoryBtn";
+    historyHeader.className = "flex justify-between items-center p-2 border-b text-gray-500 text-xs font-semibold";
+    historyHeader.innerHTML = '<span>Recent Searches</span>';
+    historyHeader.appendChild(clearHistoryBtn);
+
+    // --- UTILITY FUNCTIONS ---
+
+    function showMessage(text, isError = false) {
+        messageArea.textContent = text;
+        messageArea.className = `text-sm font-medium ${isError ? 'text-red-500' : 'text-gray-600'} mb-4`;
+        messageArea.style.display = 'block';
+    }
+
+    function hideAllCards() {
+        messageArea.style.display = 'none';
+        welcomeMessage.classList.add('hidden');
+        noResults.classList.add('hidden');
+        wordCard.classList.add('hidden');
+        historyDisplay.classList.add('hidden');
+        wordInput.classList.remove('focus:ring-red-500', 'focus:border-red-500');
+        wordInput.classList.add('focus:ring-blue-500', 'focus:border-blue-500');
+    }
+
+    function saveToHistory(word) {
+        let history = JSON.parse(localStorage.getItem('wordHistory')) || [];
+        // Remove existing entry to move it to the top
+        history = history.filter(w => w !== word);
+        // Add new word to the top
+        history.unshift(word);
+        // Trim history to MAX_HISTORY
+        history = history.slice(0, MAX_HISTORY);
+        localStorage.setItem('wordHistory', JSON.stringify(history));
+    }
+
+    function getHistory() {
+        return JSON.parse(localStorage.getItem('wordHistory')) || [];
+    }
+
+    function playAudio(audioUrl) {
+        if (audioInstance) {
+            audioInstance.pause();
+            audioInstance.currentTime = 0;
+        }
+
+        if (!audioUrl) {
+            showMessage("Audio unavailable for this word.", true);
+            return;
+        }
+        
+        audioButton.classList.add('audio-pulse');
+        
+        try {
+            audioInstance = new Audio(audioUrl);
+            audioInstance.play().catch(e => {
+                console.error("Audio playback failed (browser restrictions or bad file):", e);
+                showMessage("Pronunciation audio failed to play. Check your browser settings.", true);
+            });
+
+            audioInstance.onended = () => {
+                audioButton.classList.remove('audio-pulse');
+            };
+
+            // Remove pulse if playback is interrupted before ending
+            audioInstance.onpause = () => {
+                audioButton.classList.remove('audio-pulse');
+            };
+
+        } catch (e) {
+            console.error("Error creating Audio instance:", e);
+            showMessage("Could not initialize audio playback.", true);
+            audioButton.classList.remove('audio-pulse');
+        }
+    }
+
+    function getPartofSpeechColor(partOfSpeech) {
+        switch (partOfSpeech.toLowerCase()) {
+            case 'noun': return 'bg-indigo-100 text-indigo-700';
+            case 'verb': return 'bg-green-100 text-green-700';
+            case 'adjective': return 'bg-yellow-100 text-yellow-700';
+            case 'adverb': return 'bg-pink-100 text-pink-700';
+            case 'interjection': return 'bg-red-100 text-red-700';
+            default: return 'bg-gray-100 text-gray-700';
+        }
+    }
+
+    // --- GEMINI API CALL (AI Contextual Examples) ---
+
+    async function generateAiExamples(word, definition) {
+        if (!isAiEnabled) return null;
+        if (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
+             console.warn("AI Insight disabled: Gemini API Key not set.");
+             return ["AI Examples: Key not configured."];
+        }
+
+        const systemPrompt = `You are a helpful linguistic assistant. Analyze the provided word and definition. Generate exactly two unique, clear, and modern example sentences using the word. The examples must not contain the word's definition. Output ONLY the two sentences, separated by a newline character.`;
+        const userQuery = `Word: ${word}. Definition: ${definition}`;
+        
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            config: { temperature: 0.7 }
+        };
+
+        try {
+            const apiUrl = GEMINI_API_URL;
+            let response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "AI analysis failed.";
+            return text.split('\n').filter(s => s.trim().length > 0);
+
+        } catch (error) {
+            console.error("Gemini API call failed:", error);
+            return ["AI Examples: Error generating content."];
+        }
+    }
+
+
+    // --- DISPLAY FUNCTIONS ---
+
+    function renderSearchDropdown(query) {
+        historyDisplay.innerHTML = '';
+        historyDisplay.appendChild(historyHeader);
+        const listContainer = document.createElement('div');
+        listContainer.id = "dropdownList";
+        historyDisplay.appendChild(listContainer);
+        
+        let items = [];
+        let title = "Recent Searches";
+
+        if (query.length > 0) {
+            // Fuzzy search logic (case-insensitive and partial match)
+            const lowerQuery = query.toLowerCase();
+            items = CITY_LIST.filter(word => 
+                word.toLowerCase().includes(lowerQuery)
+            ).slice(0, 10);
+            title = "Suggestions";
+        } else {
+            items = getHistory();
+        }
+
+        document.getElementById('dropdownTitle').textContent = title;
+
+        if (items.length === 0 && query.length === 0) {
+            historyDisplay.classList.add('hidden');
+            return;
+        }
+
+        historyDisplay.classList.remove('hidden');
+
+        items.forEach(item => {
+            const listItem = document.createElement('div');
+            listItem.className = "p-2 cursor-pointer hover:bg-blue-50 transition text-gray-800";
+            listItem.textContent = item;
+            
+            // Use onmousedown to prevent input blur before click registers
+            listItem.onmousedown = (e) => {
+                e.preventDefault(); 
+                wordInput.value = item;
+                historyDisplay.classList.add('hidden');
+                performSearch(item);
+            };
+            listContainer.appendChild(listItem);
+        });
+    }
+
+    async function displayWordData(data) {
+        const word = data[0].word;
+        
+        hideAllCards();
+        saveToHistory(word);
+        wordCard.classList.remove('hidden');
+        wordTitle.textContent = word;
+        
+        // --- 1. Audio and Phonetics ---
+        let phonetic = data[0].phonetic || '';
+        let audioUrl = '';
+        
+        // Find the best audio link and phonetic text
+        for (const entry of data) {
+            if (entry.phonetics && entry.phonetics.length > 0) {
+                const phoneticEntry = entry.phonetics.find(p => p.audio && p.audio.length > 0) || entry.phonetics[0];
+                if (phoneticEntry) {
+                    phonetic = phoneticEntry.text || phonetic;
+                    audioUrl = phoneticEntry.audio || audioUrl;
+                    break;
+                }
+            }
+        }
+        
+        phoneticText.textContent = phonetic;
+        audioButton.onclick = () => playAudio(audioUrl);
+        
+        // --- 2. Etymology ---
+        const etymologies = data[0].origin || data.map(d => d.origin).flat().filter(o => o);
+        if (etymologies && etymologies.length > 0) {
+            etymologyText.innerHTML = etymologies[0];
+            etymologyCard.classList.remove('hidden');
+        } else {
+            etymologyCard.classList.add('hidden');
+        }
+
+        // --- 3. Word Forms / Inflections ---
+        const forms = data.map(d => d.word || d.phonetic).flat().filter((v, i, a) => a.indexOf(v) === i && v !== word);
+        if (forms.length > 0) {
+            formsList.innerHTML = forms.map(form => `<span class="word-form-tag">${form}</span>`).join('');
+            formsCard.classList.remove('hidden');
+        } else {
+            formsCard.classList.add('hidden');
+        }
+
+
+        // --- 4. Meanings and Definitions ---
+        meaningsContainer.innerHTML = '';
+        
+        let firstMeaningDefinition = ''; 
+        let isFirstMeaning = true;
+
+        for (const entry of data) {
+            if (!entry.meanings) continue;
+
+            for (const meaning of entry.meanings) {
+                const colorClass = getPartofSpeechColor(meaning.partOfSpeech);
+                const meaningDiv = document.createElement('div');
+                meaningDiv.className = "p-4 bg-white rounded-lg shadow-md border border-gray-100";
+
+                let html = `<h3 class="text-xl font-bold mb-3">
+                                <span class="part-of-speech ${colorClass}">${meaning.partOfSpeech}</span>
+                            </h3>`;
+                
+                // Definitions
+                html += `<ul class="list-disc list-inside space-y-2 mb-4 ml-4 text-gray-700">`;
+                meaning.definitions.slice(0, 3).forEach((def, index) => {
+                    html += `<li class="text-base">
+                                <span class="font-medium text-gray-800">${def.definition}</span>`;
+                    if (def.example) {
+                        html += `<p class="text-sm italic text-gray-500 mt-1">Example: "${def.example}"</p>`;
+                    }
+                    html += `</li>`;
+                    
+                    // Capture the first definition for AI analysis
+                    if (isFirstMeaning && index === 0) {
+                        firstMeaningDefinition = def.definition;
+                        isFirstMeaning = false;
+                    }
+                });
+                html += `</ul>`;
+                
+                // Synonyms and Antonyms
+                const synonyms = meaning.synonyms || [];
+                const antonyms = meaning.antonyms || [];
+
+                if (synonyms.length > 0) {
+                    html += `<div class="mt-4"><p class="text-sm font-semibold text-gray-700">Synonyms:</p><div class="scroll-list flex flex-wrap gap-2 pt-1">`;
+                    html += synonyms.map(w => `<a href="#" class="text-blue-500 hover:text-blue-700 text-sm font-medium transition underline" onmousedown="performSearch('${w.replace(/'/g, "\\'")}', event)">${w}</a>`).join(', ');
+                    html += `</div></div>`;
+                }
+                if (antonyms.length > 0) {
+                    html += `<div class="mt-2"><p class="text-sm font-semibold text-gray-700">Antonyms:</p><div class="scroll-list flex flex-wrap gap-2 pt-1">`;
+                    html += antonyms.map(w => `<a href="#" class="text-red-500 hover:text-red-700 text-sm font-medium transition underline" onmousedown="performSearch('${w.replace(/'/g, "\\'")}', event)">${w}</a>`).join(', ');
+                    html += `</div></div>`;
+                }
+
+                meaningDiv.innerHTML = html;
+                meaningsContainer.appendChild(meaningDiv);
+            }
+        }
+
+        // --- 5. AI Contextual Examples ---
+        if (firstMeaningDefinition.length > 0 && isAiEnabled) {
+            const aiCard = document.createElement('div');
+            aiCard.className = "p-4 mt-8 bg-blue-50 rounded-lg border border-blue-200";
+            aiCard.innerHTML = `<h3 class="text-lg font-bold text-blue-700 mb-2 flex items-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-12a1 1 0 102 0V9a1 1 0 10-2 0V6zm0 5a1 1 0 102 0 1 1 0 00-2 0z" clip-rule="evenodd" />
+                                    </svg>
+                                    AI Contextual Examples
+                                </h3>
+                                <div id="aiLoading" class="text-sm text-gray-500 italic">Generating custom examples...</div>
+                                <ul id="aiList" class="list-disc list-inside space-y-1 ml-4 text-gray-600"></ul>`;
+            meaningsContainer.appendChild(aiCard);
+
+            const aiLoading = aiCard.querySelector('#aiLoading');
+            const aiList = aiCard.querySelector('#aiList');
+
+            const aiExamples = await generateAiExamples(word, firstMeaningDefinition);
+            aiLoading.classList.add('hidden');
+            
+            if (aiExamples && aiExamples.length > 0 && aiExamples[0] !== "AI analysis failed.") {
+                aiList.innerHTML = aiExamples.map(ex => `<li class="text-base">${ex}</li>`).join('');
+            } else {
+                aiList.innerHTML = `<li class="text-sm italic text-red-500">${aiExamples[0] || "AI analysis failed."}</li>`;
+            }
+        }
+    }
+
+
+    // --- MAIN EXECUTION LOGIC ---
+
+    async function performSearch(word, event) {
+        if (event) event.preventDefault();
+        
+        const searchTerm = (word || wordInput.value).trim().toLowerCase();
+        if (!searchTerm) return;
+
+        hideAllCards();
+        showMessage(`Searching for "${searchTerm}"...`);
+        wordInput.value = searchTerm;
+        
+        try {
+            const response = await fetch(`${DICTIONARY_API_URL}${searchTerm}`);
+            
+            if (response.status === 404) {
+                showNoResults();
+                return;
+            }
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            if (Array.isArray(data) && data.length > 0) {
+                await displayWordData(data);
+            } else {
+                showNoResults();
+            }
+
+        } catch (error) {
+            console.error('Fetch Error:', error);
+            showMessage(`An unexpected error occurred. Please check your network.`, true);
+            wordInput.classList.add('focus:ring-red-500', 'focus:border-red-500');
+        }
+    }
+
+    function showNoResults() {
+        hideAllCards();
+        noResults.classList.remove('hidden');
+        wordInput.classList.add('focus:ring-red-500', 'focus:border-red-500');
+    }
+
+    // --- EVENT LISTENERS ---
+
+    // History and Suggestions Logic
+    function handleInputFocus() {
+        if (wordInput.value === '') {
+            renderSearchDropdown('');
+        }
+        historyDisplay.classList.remove('hidden');
+    }
+    
+    function handleInputBlur() {
+        // Use a timeout to allow click event on dropdown items to fire before hiding
+        historyTimeout = setTimeout(() => {
+            historyDisplay.classList.add('hidden');
+        }, 150);
+    }
+    
+    // Clear history function
+    clearHistoryBtn.onclick = () => {
+        localStorage.removeItem('wordHistory');
+        renderSearchDropdown('');
+    };
+
+    // AI Toggle Logic
+    function updateAiToggle() {
+        if (isAiEnabled) {
+            aiOnBtn.classList.add('toggle-active');
+            aiOnBtn.classList.remove('toggle-inactive');
+            aiOffBtn.classList.add('toggle-inactive');
+            aiOffBtn.classList.remove('toggle-active');
+        } else {
+            aiOffBtn.classList.add('toggle-active');
+            aiOffBtn.classList.remove('toggle-inactive');
+            aiOnBtn.classList.add('toggle-inactive');
+            aiOnBtn.classList.remove('toggle-active');
+        }
+        localStorage.setItem('aiEnabled', isAiEnabled);
+    }
+    
+    aiOnBtn.onclick = () => { isAiEnabled = true; updateAiToggle(); };
+    aiOffBtn.onclick = () => { isAiEnabled = false; updateAiToggle(); };
+
+    // Initialization
+    window.onload = () => {
+        // Initial setup for AI toggle state
+        updateAiToggle();
+
+        // Event listeners for search and input
+        searchButton.onclick = () => performSearch();
+        wordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                performSearch();
+            }
+        });
+        
+        // Input event for showing suggestions
+        wordInput.addEventListener('input', () => {
+            clearTimeout(historyTimeout); // Cancel blur timeout if user starts typing again
+            renderSearchDropdown(wordInput.value);
+        });
+
+        // Focus/Blur listeners for dropdown visibility
+        wordInput.addEventListener('focus', handleInputFocus);
+        wordInput.addEventListener('blur', handleInputBlur);
+        
+        // Random word search
+        randomButton.onclick = () => {
+            const randomIndex = Math.floor(Math.random() * RANDOM_WORDS.length);
+            const word = RANDOM_WORDS[randomIndex];
+            performSearch(word);
+        };
+
+        // Render initial history if available
+        if (getHistory().length > 0) {
+             renderSearchDropdown('');
+        } else {
+            welcomeMessage.classList.remove('hidden');
+        }
+    };
+</script>
+
+</body>
+</html>
